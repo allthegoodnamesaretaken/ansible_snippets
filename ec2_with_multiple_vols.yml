@@ -1,0 +1,60 @@
+---
+- hosts: all
+
+  vars:
+    my_instances:
+      instance1:
+        name: 'Instance1'
+        type: 'm4.large'
+        region: 'us-east-1'
+        key_name: 'my_key'
+        group: 'sg-XXXXXX'
+        image: 'ami-xXXXXXXX'
+        vpc_subnet_id: 'subnet-yyyyyyyy'
+        tag_type: 'SomeType'
+        tag_env: 'SomeEnv'
+        assign_pub_ip: 'xx.xx.xx.xx'
+        term_protection: 'true|false' 
+        count: 'X' 
+        vols:
+          - vol:
+              attach_point: 'sda'
+              volume_type: 'gp2'
+              volume_size: 'XXX'
+              delete_on_term: true
+          - vol:
+              attach_point: 'sdb'
+              volume_type: 'gp2'
+              volume_size: 'XXX'
+              delete_on_term: false
+  tasks:
+    - name: create vols fact
+      set_fact:
+        vol:
+        - device_name: '/dev/{{ item.1.vol.attach_point }}'
+          volume_type: '{{ item.1.vol.volume_type }}'
+          volume_size: "{{ item.1.vol.volume_size }}"
+          delete_on_termination: '{{ item.1.vol.delete_on_term }}'
+      with_subelements:
+        - '{{ my_instances }}'
+        - vols
+      register: volumes
+
+    - name: Provision EC2 Box
+      local_action:
+        module: ec2
+        profile: "{{ aws_profile }}"
+        region: "{{ item.value.region }}"
+        key_name: "{{ item.value.key_name }}"
+        group: "{{ item.value.group }}"
+        instance_type: "{{ item.value.type }}"
+        image: "{{ item.value.image }}"
+        vpc_subnet_id: "{{ item.value.vpc_subnet_id }}"
+        instance_tags: '{"Name":"{{ item.value.name}}","Type":"{{ item.value.tag_type }}","Environment":"{{ item.value.tag_env }}"}'
+        assign_public_ip: "{{ item.value.assign_pub_ip }}"
+        count: "{{ item.value.count }}"
+        termination_protection: "{{ item.value.term_protection }}"
+        wait: true
+        volumes: "{{ volumes.results | map(attribute='ansible_facts.vol') | list }}"
+      with_dict:
+        - '{{ my_instances }}'
